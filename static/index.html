@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastCampus LMS Crawler v2</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body>
+    <!-- Background Elements -->
+    <div class="bg-grid"></div>
+    <div class="bg-blur bg-blur-1"></div>
+    <div class="bg-blur bg-blur-2"></div>
+    <div class="bg-blur bg-blur-3"></div>
+    
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-robot"></i>
+                    <span>FastCampus Crawler</span>
+                    <span class="version">v2.0</span>
+                </div>
+                <div class="status-indicator" id="connectionStatus">
+                    <div class="status-dot"></div>
+                    <span>연결 대기중</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <div class="container">
+            <!-- Hero Section -->
+            <div class="hero-section">
+                <h1 class="hero-title">
+                    <span class="gradient-text">FastCampus LMS</span>
+                    <span>크롤링 도구</span>
+                </h1>
+                <p class="hero-description">
+                    시험 ID를 입력하여 수강생 정보와 과제 데이터를 수집하고 다양한 형식으로 다운로드하세요
+                </p>
+            </div>
+
+            <!-- Control Panel -->
+            <div class="control-panel">
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-cog"></i> 크롤링 설정</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="crawlForm" class="form">
+                            <div class="form-group">
+                                <label for="examId" class="form-label">
+                                    <i class="fas fa-hashtag"></i>
+                                    시험 ID
+                                </label>
+                                <input 
+                                    type="text" 
+                                    id="examId" 
+                                    class="form-input" 
+                                    placeholder="예: 8532"
+                                    required
+                                >
+                                <div class="form-hint">URL에서 숫자 부분을 입력해주세요</div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="fileFormat" class="form-label">
+                                    <i class="fas fa-file-export"></i>
+                                    다운로드 형식
+                                </label>
+                                <select id="fileFormat" class="form-select">
+                                    <option value="csv">CSV</option>
+                                    <option value="xlsx">Excel (XLSX)</option>
+                                    <option value="json">JSON</option>
+                                    <option value="xml">XML</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="submit" id="startBtn" class="btn btn-primary">
+                                    <i class="fas fa-play"></i>
+                                    <span>크롤링 시작</span>
+                                </button>
+                                <button type="button" id="stopBtn" class="btn btn-secondary" disabled>
+                                    <i class="fas fa-stop"></i>
+                                    <span>중지</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Section -->
+            <div class="progress-section" style="display: none;" id="progressSection">
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-chart-line"></i> 진행 상황</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressBar"></div>
+                            </div>
+                            <div class="progress-text" id="progressText">0%</div>
+                        </div>
+                        <div class="status-message" id="statusMessage">
+                            대기 중...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div class="results-section" style="display: none;" id="resultsSection">
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-download"></i> 결과 다운로드</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="result-info" id="resultInfo">
+                            <!-- 결과 정보가 여기에 표시됩니다 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Log Section -->
+            <div class="log-section">
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-terminal"></i> 실시간 로그</h2>
+                        <button class="btn btn-small" id="clearLogBtn">
+                            <i class="fas fa-trash"></i>
+                            로그 지우기
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="log-container" id="logContainer">
+                            <div class="log-entry system">시스템이 준비되었습니다.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 FastCampus LMS Crawler. Made with ❤️ using FastAPI</p>
+        </div>
+    </footer>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>처리중...</p>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div class="notification" id="notification" style="display: none;">
+        <div class="notification-content">
+            <i class="notification-icon"></i>
+            <span class="notification-message"></span>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html> 
