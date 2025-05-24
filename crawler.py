@@ -38,18 +38,22 @@ class FastCampusLMSCrawler:
         self._add_log("Selenium 드라이버 설정 시작...")
         chrome_options = Options()
         chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--start-maximized")
-        chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
         chrome_options.add_argument("--disable-popup-blocking")
         chrome_options.add_argument("--disable-notifications")
         chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-web-security")
-        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
         chrome_options.add_argument("--remote-debugging-port=9222")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_argument("--disable-background-timer-throttling")
+        chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+        chrome_options.add_argument("--disable-renderer-backgrounding")
+        chrome_options.add_argument("--disable-features=TranslateUI")
+        chrome_options.add_argument("--disable-ipc-flooding-protection")
         chrome_options.add_experimental_option("useAutomationExtension", False)
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option("prefs", {
@@ -58,13 +62,23 @@ class FastCampusLMSCrawler:
             "autofill.profile_enabled": False
         })
         
+        # Render 환경에서 Chrome 바이너리 경로 설정
+        chrome_bin = os.getenv('CHROME_BIN')
+        if chrome_bin:
+            chrome_options.binary_location = chrome_bin
+            self._add_log(f"Chrome 바이너리 경로 설정: {chrome_bin}")
+        
         try:
+            # Render 환경에서는 Chrome이 시스템에 설치되어 있으므로 ChromeDriverManager 사용
             service = Service(ChromeDriverManager().install())
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.wait = WebDriverWait(self.driver, 20)
             self._add_log("Selenium 드라이버 설정 완료.")
         except Exception as e:
             self._add_log(f"드라이버 설정 실패: {e}")
+            # 드라이버 설정 실패시 None으로 설정하여 이후 로직에서 처리
+            self.driver = None
+            self.wait = None
             raise
         
     async def login_process(self, websocket=None):
@@ -77,6 +91,12 @@ class FastCampusLMSCrawler:
                 pass
         
         self.setup_driver()
+        
+        # 드라이버 설정 실패 체크
+        if self.driver is None:
+            error_msg = "Chrome 드라이버 설정에 실패했습니다. Render 환경에서 Chrome이 설치되지 않았을 수 있습니다."
+            self._add_log(error_msg)
+            raise Exception(error_msg)
         
         try:
             self._add_log("로그인 페이지로 이동...")

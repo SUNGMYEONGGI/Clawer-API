@@ -3,8 +3,12 @@ services:
     name: fastcampus-crawler-api
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: chmod +x install_chrome.sh && ./install_chrome.sh && pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0 
+        value: 3.11.0
+      - key: CHROME_BIN
+        value: /opt/render/project/.render/chrome/chrome-linux/chrome
+      - key: CHROMEDRIVER_PATH
+        value: /opt/render/project/.render/chrome/chromedriver
