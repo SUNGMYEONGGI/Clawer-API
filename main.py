@@ -31,6 +31,17 @@ app = FastAPI(
 # 정적 파일 서빙
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# 필요한 디렉토리 생성
+def ensure_directories():
+    """필요한 디렉토리들을 생성"""
+    directories = ["static", "static/downloads"]
+    for directory in directories:
+        if not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+
+# 앱 시작 시 디렉토리 생성
+ensure_directories()
+
 # 글로벌 크롤러 인스턴스 및 연결 관리
 crawler_instance = FastCampusLMSCrawler()
 active_connections: List[WebSocket] = []
@@ -68,6 +79,12 @@ async def read_index():
             return HTMLResponse(f.read())
     except FileNotFoundError:
         return HTMLResponse("<h1>index.html 파일을 찾을 수 없습니다.</h1>")
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Favicon 반환 (404 오류 방지)"""
+    # 간단한 빈 아이콘을 반환하여 404 오류 방지
+    return FileResponse("static/favicon.ico") if os.path.exists("static/favicon.ico") else ""
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -214,4 +231,4 @@ def start_server():
     )
 
 if __name__ == "__main__":
-    start_server() 
+    start_server()

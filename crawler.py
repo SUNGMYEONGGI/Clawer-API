@@ -45,6 +45,13 @@ class FastCampusLMSCrawler:
         chrome_options.add_argument("--disable-popup-blocking")
         chrome_options.add_argument("--disable-notifications")
         chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+        chrome_options.add_argument("--remote-debugging-port=9222")
+        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_experimental_option("useAutomationExtension", False)
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option("prefs", {
             "credentials_enable_service": False,
             "profile.password_manager_enabled": False,
@@ -122,8 +129,14 @@ class FastCampusLMSCrawler:
             raise
 
     def _collect_data_item(self, student_name: str, blog_link: str):
+        # None 체크 및 기본값 설정
+        if student_name is None:
+            student_name = "알 수 없는 학생"
+        if blog_link is None:
+            blog_link = ""
+            
         self.collected_data.append({'수강자 이름': student_name, '블로그 링크': blog_link})
-        self._add_log(f"데이터 수집: 이름={student_name}, 링크={blog_link[:30]}...")
+        self._add_log(f"데이터 수집: 이름={student_name}, 링크={blog_link[:30] if blog_link else '없음'}...")
 
     def export_data(self, exam_id: str, file_format: str = "csv") -> Optional[str]:
         if not self.collected_data:
@@ -197,11 +210,29 @@ class FastCampusLMSCrawler:
         try:
             pagination_element_xpath = '//*[@id="app"]/main/section/div/div[2]/div/div[2]/div[2]/span[2]'
             pagination_element = self.wait.until(EC.presence_of_element_located((By.XPATH, pagination_element_xpath)))
-            pagination_text = pagination_element.text.strip()
-            if '/' in pagination_text:
-                total_count = int(pagination_text.split('/')[1].strip())
+            pagination_text = pagination_element.text
+            
+            # None 체크 및 기본값 설정
+            if pagination_text is None:
+                pagination_text = "1"
             else:
-                total_count = int(pagination_text)
+                pagination_text = pagination_text.strip()
+            
+            # 빈 문자열 체크
+            if not pagination_text:
+                pagination_text = "1"
+            
+            if '/' in pagination_text:
+                try:
+                    total_count = int(pagination_text.split('/')[1].strip())
+                except (ValueError, IndexError):
+                    total_count = 1
+            else:
+                try:
+                    total_count = int(pagination_text)
+                except ValueError:
+                    total_count = 1
+            
             if total_count <= 0: 
                 total_count = 1
             await send_update(0, f"총 {total_count}개 항목 확인.")
@@ -221,7 +252,17 @@ class FastCampusLMSCrawler:
             try:
                 student_name_element_xpath = '//*[@id="app"]/main/section/div/div[2]/div/div[2]/div[1]/strong'
                 student_name_element = self.wait.until(EC.visibility_of_element_located((By.XPATH, student_name_element_xpath)))
-                student_name = student_name_element.text.strip()
+                student_name = student_name_element.text
+                
+                # None 체크 및 기본값 설정
+                if student_name is None:
+                    student_name = f"학생_{i+1}"
+                else:
+                    student_name = student_name.strip()
+                
+                if not student_name:
+                    student_name = f"학생_{i+1}"
+                    
                 await send_update(current_progress_val, f"이름: {student_name}")
 
                 blog_link = ""
@@ -234,7 +275,14 @@ class FastCampusLMSCrawler:
 
                     blog_link_element_xpath = '//*[@id="modals"]/section/div/div/div/div[2]/ul/li[2]/div/p'
                     blog_link_element = self.wait.until(EC.visibility_of_element_located((By.XPATH, blog_link_element_xpath)))
-                    blog_link = blog_link_element.text.strip()
+                    blog_link = blog_link_element.text
+                    
+                    # None 체크 및 기본값 설정
+                    if blog_link is None:
+                        blog_link = ""
+                    else:
+                        blog_link = blog_link.strip()
+                    
                     await send_update(current_progress_val, f"블로그 링크/내용 수집: {blog_link[:50]}...")
                     
                     close_modal_xpath_1 = '//*[@id="modals"]/section/div/div/div/div[1]/button'
@@ -306,4 +354,4 @@ class FastCampusLMSCrawler:
             "current_exam_id": self.current_exam_id,
             "collected_count": len(self.collected_data),
             "session_id": self.session_id
-        } 
+        }
