@@ -16,6 +16,21 @@ from xml.dom.minidom import parseString
 from typing import Callable, Optional, Dict, Any
 import uuid
 
+# threadpoolctl 호환성 문제 해결
+try:
+    import threadpoolctl
+    # threadpoolctl 버전 확인 및 설정
+    if hasattr(threadpoolctl, '__version__'):
+        print(f"threadpoolctl version: {threadpoolctl.__version__}")
+    # 스레드풀 제한 설정
+    os.environ['OMP_NUM_THREADS'] = '1'
+    os.environ['OPENBLAS_NUM_THREADS'] = '1'
+    os.environ['MKL_NUM_THREADS'] = '1'
+    os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+    os.environ['NUMEXPR_NUM_THREADS'] = '1'
+except ImportError:
+    print("threadpoolctl not available, continuing without it")
+
 class FastCampusLMSCrawler:
     def __init__(self):
         self.email = "help.edu@fastcampus.co.kr"
@@ -164,56 +179,93 @@ class FastCampusLMSCrawler:
             self._add_log("내보낼 데이터가 없습니다.")
             return None
 
-        df = pd.DataFrame(self.collected_data)
-        timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-        base_filename = f"exam_data_{exam_id}_{timestamp_str}"
-
+        self._add_log(f"데이터 내보내기 시작: {len(self.collected_data)}개 항목, 형식: {file_format}")
+        
         try:
-            if file_format == "csv":
+            # threadpoolctl 관련 설정 (Render 환경 호환성)
+            with pd.option_context('mode.chained_assignment', None):
+                df = pd.DataFrame(self.collected_data)
+            timestamp_str = time.strftime("%Y%m%d_%H%M%S")
+            base_filename = f"exam_data_{exam_id}_{timestamp_str}"
+            
+            self._add_log(f"DataFrame 생성 완료: {df.shape}")
+
+            if file_format.lower() == "csv":
+                self._add_log("CSV 파일 생성 중...")
                 from io import StringIO
                 output = StringIO()
                 df.to_csv(output, index=False, encoding='utf-8-sig')
                 content = output.getvalue().encode('utf-8-sig')
                 filename = f"{base_filename}.csv"
                 media_type = "text/csv"
+                self._add_log(f"CSV 파일 생성 완료: {len(content)} bytes")
                 
-            elif file_format == "xlsx":
+            elif file_format.lower() == "xlsx":
+                self._add_log("Excel 파일 생성 중...")
                 from io import BytesIO
+                try:
+                    import openpyxl
+                    self._add_log(f"openpyxl 버전: {openpyxl.__version__}")
+                except ImportError as ie:
+                    self._add_log(f"openpyxl 라이브러리를 찾을 수 없습니다: {ie}")
+                    return None
+                    
                 output = BytesIO()
-                df.to_excel(output, index=False, engine='openpyxl')
+                # threadpoolctl 호환성을 위한 추가 설정
+                try:
+                    # Render 환경에서 Excel 생성 시 스레드 제한
+                    with threadpoolctl.threadpool_limits(limits=1, user_api='blas'):
+                        df.to_excel(output, index=False, engine='openpyxl')
+                except:
+                    # threadpoolctl이 없거나 실패할 경우 기본 방식 사용
+                    df.to_excel(output, index=False, engine='openpyxl')
+                    
                 content = output.getvalue()
                 filename = f"{base_filename}.xlsx"
                 media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                self._add_log(f"Excel 파일 생성 완료: {len(content)} bytes")
                 
-            elif file_format == "json":
+            elif file_format.lower() == "json":
+                self._add_log("JSON 파일 생성 중...")
                 import json as json_lib
                 json_data = df.to_dict(orient='records')
                 content = json_lib.dumps(json_data, indent=4, ensure_ascii=False).encode('utf-8')
                 filename = f"{base_filename}.json"
                 media_type = "application/json"
+                self._add_log(f"JSON 파일 생성 완료: {len(content)} bytes")
                 
-            elif file_format == "xml":
+            elif file_format.lower() == "xml":
+                self._add_log("XML 파일 생성 중...")
                 root = ET.Element("students")
-                for _, row in df.iterrows():
+                for idx, row in df.iterrows():
                     student_elem = ET.SubElement(root, "student")
-                    ET.SubElement(student_elem, "name").text = str(row['수강자 이름'])
-                    ET.SubElement(student_elem, "blog_link").text = str(row['블로그 링크'])
+                    ET.SubElement(student_elem, "name").text = str(row['수강자 이름']) if pd.notna(row['수강자 이름']) else ""
+                    ET.SubElement(student_elem, "blog_link").text = str(row['블로그 링크']) if pd.notna(row['블로그 링크']) else ""
                 
                 xml_str = ET.tostring(root, encoding='utf-8', xml_declaration=True)
                 pretty_xml_str = parseString(xml_str).toprettyxml(indent="  ")
                 content = pretty_xml_str.encode('utf-8')
                 filename = f"{base_filename}.xml"
                 media_type = "application/xml"
+                self._add_log(f"XML 파일 생성 완료: {len(content)} bytes")
                 
             else:
-                self._add_log(f"지원하지 않는 파일 형식: {file_format}")
+                self._add_log(f"지원하지 않는 파일 형식: {file_format}. 지원 형식: csv, xlsx, json, xml")
                 return None
                 
-            self._add_log(f"{filename} 데이터 준비 완료 (메모리에서 직접 다운로드).")
+            self._add_log(f"{filename} 데이터 준비 완료 (메모리에서 직접 다운로드). 파일 크기: {len(content)} bytes")
             return (content, filename, media_type)
             
+        except ImportError as ie:
+            self._add_log(f"필요한 라이브러리가 설치되지 않았습니다: {ie}")
+            return None
+        except pd.errors.EmptyDataError as ede:
+            self._add_log(f"DataFrame이 비어있습니다: {ede}")
+            return None
         except Exception as e:
-            self._add_log(f"데이터 생성 중 오류: {e}")
+            self._add_log(f"데이터 생성 중 예상치 못한 오류: {type(e).__name__}: {str(e)}")
+            import traceback
+            self._add_log(f"오류 상세: {traceback.format_exc()}")
             return None
 
     async def crawl_exam_data(self, exam_id: str, websocket=None) -> int:

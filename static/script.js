@@ -290,8 +290,8 @@ class CrawlerApp {
         this.addLog(message.message, 'success');
         this.showNotification(`크롤링 완료! ${message.collected_count}개 데이터 수집`, 'success');
         
-        if (message.file_path) {
-            this.displayResults(message.file_path, message.collected_count);
+        if (message.download_ready && message.filename) {
+            this.displayResults(message.filename, message.collected_count);
         }
         
         setTimeout(() => {
@@ -312,8 +312,7 @@ class CrawlerApp {
         this.addLog(message, 'warning');
     }
 
-    displayResults(filePath, collectedCount) {
-        const fileName = filePath.split('/').pop();
+    displayResults(fileName, collectedCount) {
         const fileExtension = fileName.split('.').pop().toUpperCase();
         
         this.resultInfo.innerHTML = `
@@ -323,7 +322,7 @@ class CrawlerApp {
                     <p>수집된 데이터: ${collectedCount}개</p>
                     <p>파일 형식: ${fileExtension}</p>
                 </div>
-                <a href="/api/download/${filePath}" class="download-btn" download>
+                <a href="/api/download" class="download-btn" download="${fileName}">
                     <i class="fas fa-download"></i>
                     다운로드
                 </a>

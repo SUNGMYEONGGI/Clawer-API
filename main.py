@@ -146,28 +146,43 @@ async def run_crawling_task(exam_id: str, file_format: str):
         
         # 파일 생성 (메모리에서)
         if collected_count > 0:
-            file_data = crawler_instance.export_data(exam_id, file_format)
+            await manager.broadcast(json.dumps({
+                "type": "status",
+                "message": f"{file_format.upper()} 형식으로 파일 생성 중..."
+            }))
             
-            if file_data:
-                content, filename, media_type = file_data
-                # 파일 데이터를 세션에 임시 저장
-                crawler_instance.temp_file_data = {
-                    "content": content,
-                    "filename": filename,
-                    "media_type": media_type
-                }
+            try:
+                file_data = crawler_instance.export_data(exam_id, file_format)
                 
+                if file_data:
+                    content, filename, media_type = file_data
+                    # 파일 데이터를 세션에 임시 저장
+                    crawler_instance.temp_file_data = {
+                        "content": content,
+                        "filename": filename,
+                        "media_type": media_type
+                    }
+                    
+                    await manager.broadcast(json.dumps({
+                        "type": "complete",
+                        "message": f"크롤링 완료! {collected_count}개 데이터 수집 ({file_format.upper()} 파일 생성 완료)",
+                        "download_ready": True,
+                        "filename": filename,
+                        "collected_count": collected_count
+                    }))
+                else:
+                    # 더 자세한 에러 정보를 로그에서 가져오기
+                    recent_logs = crawler_instance.log_messages[-5:] if crawler_instance.log_messages else []
+                    error_details = " / ".join(recent_logs) if recent_logs else "알 수 없는 오류"
+                    
+                    await manager.broadcast(json.dumps({
+                        "type": "error",
+                        "message": f"파일 생성에 실패했습니다. 형식: {file_format.upper()}, 상세: {error_details}"
+                    }))
+            except Exception as export_error:
                 await manager.broadcast(json.dumps({
-                    "type": "complete",
-                    "message": f"크롤링 완료! {collected_count}개 데이터 수집",
-                    "download_ready": True,
-                    "filename": filename,
-                    "collected_count": collected_count
-                }))
-            else:
-                await manager.broadcast(json.dumps({
-                    "type": "error",
-                    "message": "파일 생성에 실패했습니다."
+                    "type": "error", 
+                    "message": f"파일 생성 중 예외 발생: {str(export_error)} (형식: {file_format.upper()})"
                 }))
         else:
             await manager.broadcast(json.dumps({
