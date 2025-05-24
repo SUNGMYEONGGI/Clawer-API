@@ -31,10 +31,10 @@ app = FastAPI(
 # 정적 파일 서빙
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# 필요한 디렉토리 생성
+# 필요한 디렉토리 생성 (static만)
 def ensure_directories():
     """필요한 디렉토리들을 생성"""
-    directories = ["static", "static/downloads"]
+    directories = ["static"]
     for directory in directories:
         if not os.path.exists(directory):
             os.makedirs(directory, exist_ok=True)
@@ -144,21 +144,31 @@ async def run_crawling_task(exam_id: str, file_format: str):
         # 크롤링 실행
         collected_count = await crawler_instance.crawl_exam_data(exam_id, websocket)
         
-        # 파일 생성
+        # 파일 생성 (메모리에서)
         if collected_count > 0:
-            # downloads 디렉토리 확인 및 생성
-            downloads_dir = "static/downloads"
-            if not os.path.exists(downloads_dir):
-                os.makedirs(downloads_dir)
-                
-            file_path = crawler_instance.export_data(exam_id, file_format)
+            file_data = crawler_instance.export_data(exam_id, file_format)
             
-            await manager.broadcast(json.dumps({
-                "type": "complete",
-                "message": f"크롤링 완료! {collected_count}개 데이터 수집",
-                "file_path": file_path,
-                "collected_count": collected_count
-            }))
+            if file_data:
+                content, filename, media_type = file_data
+                # 파일 데이터를 세션에 임시 저장
+                crawler_instance.temp_file_data = {
+                    "content": content,
+                    "filename": filename,
+                    "media_type": media_type
+                }
+                
+                await manager.broadcast(json.dumps({
+                    "type": "complete",
+                    "message": f"크롤링 완료! {collected_count}개 데이터 수집",
+                    "download_ready": True,
+                    "filename": filename,
+                    "collected_count": collected_count
+                }))
+            else:
+                await manager.broadcast(json.dumps({
+                    "type": "error",
+                    "message": "파일 생성에 실패했습니다."
+                }))
         else:
             await manager.broadcast(json.dumps({
                 "type": "error",
@@ -195,21 +205,19 @@ async def get_status():
     status = crawler_instance.get_status()
     return StatusResponse(**status)
 
-@app.get("/api/download/{file_path:path}")
-async def download_file(file_path: str):
-    """파일 다운로드"""
-    # 보안을 위해 static/downloads 디렉토리 내부만 허용
-    if not file_path.startswith("static/downloads/"):
-        raise HTTPException(status_code=400, detail="잘못된 파일 경로입니다.")
+@app.get("/api/download")
+async def download_file():
+    """메모리에서 직접 파일 다운로드"""
+    if not hasattr(crawler_instance, 'temp_file_data') or not crawler_instance.temp_file_data:
+        raise HTTPException(status_code=404, detail="다운로드할 파일이 없습니다. 먼저 크롤링을 완료하세요.")
     
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+    file_data = crawler_instance.temp_file_data
     
-    filename = os.path.basename(file_path)
-    return FileResponse(
-        path=file_path,
-        filename=filename,
-        media_type='application/octet-stream'
+    from fastapi.responses import Response
+    return Response(
+        content=file_data["content"],
+        media_type=file_data["media_type"],
+        headers={"Content-Disposition": f"attachment; filename={file_data['filename']}"}
     )
 
 @app.get("/api/logs")

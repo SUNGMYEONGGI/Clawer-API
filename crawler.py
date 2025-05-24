@@ -27,6 +27,7 @@ class FastCampusLMSCrawler:
         self.collected_data = []
         self.log_messages = []
         self.session_id = None
+        self.temp_file_data = None
         
     def _add_log(self, message: str):
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -158,7 +159,7 @@ class FastCampusLMSCrawler:
         self.collected_data.append({'수강자 이름': student_name, '블로그 링크': blog_link})
         self._add_log(f"데이터 수집: 이름={student_name}, 링크={blog_link[:30] if blog_link else '없음'}...")
 
-    def export_data(self, exam_id: str, file_format: str = "csv") -> Optional[str]:
+    def export_data(self, exam_id: str, file_format: str = "csv") -> Optional[tuple]:
         if not self.collected_data:
             self._add_log("내보낼 데이터가 없습니다.")
             return None
@@ -166,39 +167,53 @@ class FastCampusLMSCrawler:
         df = pd.DataFrame(self.collected_data)
         timestamp_str = time.strftime("%Y%m%d_%H%M%S")
         base_filename = f"exam_data_{exam_id}_{timestamp_str}"
-        output_path = None
 
         try:
             if file_format == "csv":
-                output_path = f"static/downloads/{base_filename}.csv"
-                df.to_csv(output_path, index=False, encoding='utf-8-sig')
+                from io import StringIO
+                output = StringIO()
+                df.to_csv(output, index=False, encoding='utf-8-sig')
+                content = output.getvalue().encode('utf-8-sig')
+                filename = f"{base_filename}.csv"
+                media_type = "text/csv"
+                
             elif file_format == "xlsx":
-                output_path = f"static/downloads/{base_filename}.xlsx"
-                df.to_excel(output_path, index=False, engine='openpyxl')
+                from io import BytesIO
+                output = BytesIO()
+                df.to_excel(output, index=False, engine='openpyxl')
+                content = output.getvalue()
+                filename = f"{base_filename}.xlsx"
+                media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                
             elif file_format == "json":
-                output_path = f"static/downloads/{base_filename}.json"
-                df.to_json(output_path, orient='records', lines=False, indent=4, force_ascii=False)
+                import json as json_lib
+                json_data = df.to_dict(orient='records')
+                content = json_lib.dumps(json_data, indent=4, ensure_ascii=False).encode('utf-8')
+                filename = f"{base_filename}.json"
+                media_type = "application/json"
+                
             elif file_format == "xml":
-                output_path = f"static/downloads/{base_filename}.xml"
                 root = ET.Element("students")
                 for _, row in df.iterrows():
                     student_elem = ET.SubElement(root, "student")
                     ET.SubElement(student_elem, "name").text = str(row['수강자 이름'])
                     ET.SubElement(student_elem, "blog_link").text = str(row['블로그 링크'])
                 
-                tree = ET.ElementTree(root)
-                xml_str = ET.tostring(root, encoding='utf-8')
+                xml_str = ET.tostring(root, encoding='utf-8', xml_declaration=True)
                 pretty_xml_str = parseString(xml_str).toprettyxml(indent="  ")
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(pretty_xml_str)
+                content = pretty_xml_str.encode('utf-8')
+                filename = f"{base_filename}.xml"
+                media_type = "application/xml"
+                
             else:
                 self._add_log(f"지원하지 않는 파일 형식: {file_format}")
                 return None
                 
-            self._add_log(f"{output_path} 파일로 데이터 내보내기 완료.")
-            return output_path
+            self._add_log(f"{filename} 데이터 준비 완료 (메모리에서 직접 다운로드).")
+            return (content, filename, media_type)
+            
         except Exception as e:
-            self._add_log(f"데이터 내보내기 중 오류 ({output_path}): {e}")
+            self._add_log(f"데이터 생성 중 오류: {e}")
             return None
 
     async def crawl_exam_data(self, exam_id: str, websocket=None) -> int:
@@ -367,6 +382,7 @@ class FastCampusLMSCrawler:
         self.driver = None
         self.is_running = False
         self.current_exam_id = None
+        self.temp_file_data = None
 
     def get_status(self) -> Dict[str, Any]:
         return {
